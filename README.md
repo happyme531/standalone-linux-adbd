@@ -1,4 +1,14 @@
-# android-tools
+# standalone-linux-adbd
+
+[![Linux adbd CI](https://github.com/happyme531/standalone-linux-adbd/actions/workflows/linux-adbd.yml/badge.svg)](https://github.com/happyme531/standalone-linux-adbd/actions/workflows/linux-adbd.yml)
+
+This repository extends [nmeum/android-tools](https://github.com/nmeum/android-tools)
+with a fully static standalone Linux `adbd` for development boards. The daemon
+supports high-throughput TCP, VSOCK, and USB FunctionFS while retaining the
+original project's CMake packaging targets. See [LINUX_ADBD.md](LINUX_ADBD.md)
+for build, deployment, compatibility, and benchmark details.
+
+## Upstream android-tools packaging
 
 Git repository to make it easier to package certain command line
 utilities provided by [android-tools][android-tools].
