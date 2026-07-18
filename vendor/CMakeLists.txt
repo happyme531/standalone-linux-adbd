@@ -65,7 +65,13 @@ endif()
 
 # XXX: Consider using https://cmake.org/cmake/help/v3.0/module/ExternalProject.html
 if(ANDROID_TOOLS_PATCH_VENDOR AND EXISTS "${ANDROID_PATCH_DIR}/")
-	execute_process(COMMAND git submodule --quiet update)
+	execute_process(
+		COMMAND git submodule --quiet update
+		WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+		RESULT_VARIABLE ret)
+	if(NOT "${ret}" STREQUAL "0")
+		message(FATAL_ERROR "Couldn't update vendor submodules")
+	endif()
 	foreach(v ${android-vendored})
 		file(GLOB patches ${ANDROID_PATCH_DIR}/${v}/*.patch)
 		if(patches)

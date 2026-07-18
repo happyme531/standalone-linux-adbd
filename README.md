@@ -24,7 +24,8 @@ Android command line utilities in a central place.
 Currently the following tools are supported:
 
 * adb
-* a fully static, TCP-only Linux adbd (see [LINUX_ADBD.md](LINUX_ADBD.md))
+* a fully static standalone Linux adbd with TCP, VSOCK, and optional USB
+  FunctionFS transports (see [LINUX_ADBD.md](LINUX_ADBD.md))
 * fastboot
 * mke2fs.android (required by fastboot)
 * simg2img, img2simg, append2simg

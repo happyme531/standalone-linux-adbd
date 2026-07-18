@@ -44,6 +44,11 @@ jobs:
             echo "unexpected dynamic dependency"
             exit 1
           fi
+          aarch64-linux-gnu-strings dist/adbd-36.0.1-linux-aarch64-static | grep -Fx WINUSB
+          aarch64-linux-gnu-strings dist/adbd-36.0.1-linux-aarch64-static | \
+            grep -Fx DeviceInterfaceGUID
+          aarch64-linux-gnu-strings dist/adbd-36.0.1-linux-aarch64-static | \
+            grep -Fx '{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}'
           qemu-aarch64 dist/adbd-36.0.1-linux-aarch64-static --version
           ADBD_PORT=5038 qemu-aarch64 \
             dist/adbd-36.0.1-linux-aarch64-static --device_banner=device \
@@ -66,6 +71,8 @@ jobs:
           test "${started}" -eq 1
           sha256sum dist/adbd-36.0.1-linux-aarch64-static \
             > dist/adbd-36.0.1-linux-aarch64-static.sha256
+          install -m 0755 contrib/rockchip-usbdevice/adbd-ms-os-desc.sh \
+            dist/rockchip-adbd-ms-os-desc.sh
 
       - name: Upload daemon
         uses: actions/upload-artifact@v4

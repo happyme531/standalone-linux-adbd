@@ -1,0 +1,150 @@
+From 92e33ba14b648693d2498f556387a72248ce64d4 Mon Sep 17 00:00:00 2001
+From: android-tools-builder <builder@localhost>
+Date: Sun, 19 Jul 2026 03:22:46 +0800
+Subject: [PATCH] adb: enable FunctionFS USB on standalone Linux
+
+---
+ daemon/main.cpp    |  2 +-
+ daemon/usb.cpp     | 11 ++++++++++-
+ daemon/usb_ffs.cpp | 42 ++++++++++++++++++++++++++----------------
+ 3 files changed, 37 insertions(+), 18 deletions(-)
+
+diff --git a/daemon/main.cpp b/daemon/main.cpp
+index ad4948d..7f4a23a 100644
+--- a/daemon/main.cpp
++++ b/daemon/main.cpp
+@@ -260,7 +260,7 @@ int adbd_main() {
+ 
+     bool is_usb = false;
+ 
+-#if defined(__ANDROID__)
++#if defined(__ANDROID__) || ADB_LINUX_USB
+     if (access(USB_FFS_ADB_EP0, F_OK) == 0) {
+         // Listen on USB.
+         usb_init();
+diff --git a/daemon/usb.cpp b/daemon/usb.cpp
+index f442961..20bc6c0 100644
+--- a/daemon/usb.cpp
++++ b/daemon/usb.cpp
+@@ -42,14 +42,19 @@
+ 
+ #include <android-base/logging.h>
+ #include <android-base/macros.h>
++#include <android-base/thread_annotations.h>
++
++#if defined(__ANDROID__)
+ #include <android-base/parsebool.h>
+ #include <android-base/properties.h>
+-#include <android-base/thread_annotations.h>
++#endif
+ 
+ #include "adb_unique_fd.h"
+ #include "adb_utils.h"
+ #include "apacket_reader.h"
++#if defined(__ANDROID__)
+ #include "daemon/property_monitor.h"
++#endif
+ #include "daemon/usb_ffs.h"
+ #include "sysdeps/chrono.h"
+ #include "transfer_id.h"
+@@ -725,6 +730,7 @@ struct UsbFfsConnection : public Connection {
+ static void usb_ffs_open_thread() {
+     adb_thread_setname("usb ffs open");
+ 
++#if defined(__ANDROID__)
+     // When the device is acting as a USB host, we'll be unable to bind to the USB gadget on kernels
+     // that don't carry a downstream patch to enable that behavior.
+     //
+@@ -738,6 +744,7 @@ static void usb_ffs_open_thread() {
+         // Return false (i.e. break out of PropertyMonitor::Run) when the property != 1.
+         return android::base::ParseBool(value) == android::base::ParseBoolResult::kTrue;
+     });
++#endif
+ 
+     while (true) {
+         unique_fd control;
+@@ -748,11 +755,13 @@ static void usb_ffs_open_thread() {
+             continue;
+         }
+ 
++#if defined(__ANDROID__)
+         if (android::base::GetBoolProperty(kPropertyUsbDisabled, false)) {
+             VLOG(USB) << "pausing USB due to " << kPropertyUsbDisabled;
+             prop_mon.Run();
+             VLOG(USB) << "resuming USB";
+         }
++#endif
+ 
+         atransport* transport = new atransport(kTransportUsb);
+         transport->serial = "UsbFfs";
+diff --git a/daemon/usb_ffs.cpp b/daemon/usb_ffs.cpp
+index e538ca8..22faf09 100644
+--- a/daemon/usb_ffs.cpp
++++ b/daemon/usb_ffs.cpp
+@@ -24,9 +24,12 @@
+ #include <linux/usb/functionfs.h>
+ 
+ #include <android-base/logging.h>
+-#include <android-base/properties.h>
+ #include <android-base/unique_fd.h>
+ 
++#if defined(__ANDROID__)
++#include <android-base/properties.h>
++#endif
++
+ #include "adb.h"
+ 
+ #define MAX_PACKET_SIZE_FS 64
+@@ -210,22 +213,27 @@ struct usb_ext_compat_desc os_desc_compat = {
+     .Reserved2 = {0},
+ };
+ 
+-static struct usb_os_desc_header os_desc_header = {
+-    .interface = cpu_to_le32(0),
+-    .dwLength = cpu_to_le32(sizeof(os_desc_header) + sizeof(os_desc_compat)),
+-    .bcdVersion = cpu_to_le32(1),
+-    .wIndex = cpu_to_le32(4),
+-    .bCount = cpu_to_le32(1),
+-    .Reserved = cpu_to_le32(0),
+-};
++static struct usb_os_desc_header make_os_desc_header(uint32_t length, uint16_t index,
++                                                     uint16_t count) {
++    struct usb_os_desc_header header = {};
++    header.interface = 0;
++    header.dwLength = cpu_to_le32(length);
++    header.bcdVersion = cpu_to_le16(1);
++    header.wIndex = cpu_to_le16(index);
++    if (index == 4) {
++        header.bCount = static_cast<uint8_t>(count);
++        header.Reserved = 0;
++    } else {
++        header.wCount = cpu_to_le16(count);
++    }
++    return header;
++}
+ 
+-static struct usb_os_desc_header os_prop_header = {
+-    .interface = cpu_to_le32(0),
+-    .dwLength = cpu_to_le32(sizeof(os_desc_header) + sizeof(os_prop_values)),
+-    .bcdVersion = cpu_to_le32(1),
+-    .wIndex = cpu_to_le32(5),
+-    .wCount = cpu_to_le16(1),
+-};
++static struct usb_os_desc_header os_desc_header = make_os_desc_header(
++        sizeof(struct usb_os_desc_header) + sizeof(os_desc_compat), 4, 1);
++
++static struct usb_os_desc_header os_prop_header = make_os_desc_header(
++        sizeof(struct usb_os_desc_header) + sizeof(os_prop_values), 5, 1);
+ 
+ #define STR_INTERFACE_ "ADB Interface"
+ 
+@@ -299,7 +307,9 @@ bool open_functionfs(android::base::unique_fd* out_control, android::base::uniqu
+             return false;
+         }
+         // Signal only when writing the descriptors to ffs
++#if defined(__ANDROID__)
+         android::base::SetProperty("sys.usb.ffs.ready", "1");
++#endif
+     }
+ 
+     bulk_out.reset(adb_open(USB_FFS_ADB_OUT, O_RDONLY));

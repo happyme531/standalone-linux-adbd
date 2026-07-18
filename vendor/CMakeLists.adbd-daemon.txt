@@ -1,5 +1,6 @@
-# Linux/glibc, TCP-only adbd build. This intentionally omits Android-only
-# framework authentication, USB FunctionFS, JDWP, and mDNS integration.
+# Standalone Linux/glibc adbd build. This intentionally omits Android-only
+# framework integration, authentication, JDWP, and mDNS. FunctionFS USB is
+# optional and coexists with the TCP and VSOCK transports.
 
 add_library(liblog STATIC
 	logging/liblog/log_event_list.cpp
@@ -81,12 +82,23 @@ set(adbd_SOURCES
 	adb/daemon/transport_socket_server.cpp
 	linux-adbd/stubs.cpp)
 
+if(ANDROID_TOOLS_ADBD_USB)
+	list(APPEND adbd_SOURCES
+		adb/daemon/usb.cpp
+		adb/daemon/usb_ffs.cpp
+		core/libasyncio/AsyncIO.cpp)
+endif()
+
 add_executable(adbd ${adbd_SOURCES})
 target_compile_definitions(adbd PRIVATE
 	ADB_HOST=0
 	ADB_LINUX_TCP_ONLY=1
 	_GNU_SOURCE
 	ANDROID_BASE_UNIQUE_FD_DISABLE_IMPLICIT_CONVERSION=1)
+if(ANDROID_TOOLS_ADBD_USB)
+	target_compile_definitions(adbd PRIVATE ADB_LINUX_USB=1)
+	target_include_directories(adbd PRIVATE core/libasyncio/include)
+endif()
 target_compile_options(adbd PRIVATE
 	-pthread
 	-include fmt/format.h
