@@ -1,0 +1,266 @@
+From 5089542c96bce63621005a90f61ceaa22ab6068b Mon Sep 17 00:00:00 2001
+From: hallo1 <2302004040@qq.com>
+Date: Sun, 19 Jul 2026 02:42:23 +0800
+Subject: [PATCH] adb: add Linux TCP-only daemon support
+
+---
+ adb.cpp                  |  4 ++++
+ adb_auth.h               |  6 ++++++
+ daemon/main.cpp          |  5 +++++
+ daemon/shell_service.cpp | 16 ++++++++++++----
+ transport.cpp            | 32 ++++++++++++++++++++++++--------
+ transport.h              |  6 ++++++
+ 6 files changed, 57 insertions(+), 12 deletions(-)
+
+diff --git a/adb.cpp b/adb.cpp
+index 438243b..05e2838 100644
+--- a/adb.cpp
++++ b/adb.cpp
+@@ -449,8 +449,12 @@ void handle_packet(apacket* p, atransport* t) {
+ #if ADB_HOST
+         send_tls_request(t);
+         adb_auth_tls_handshake(t);
++#else
++#if ADB_LINUX_TCP_ONLY
++        kick_transport(t);
+ #else
+         adbd_auth_tls_handshake(t);
++#endif
+ #endif
+         break;
+ 
+diff --git a/adb_auth.h b/adb_auth.h
+index a6222d5..4419b1c 100644
+--- a/adb_auth.h
++++ b/adb_auth.h
+@@ -22,8 +22,12 @@
+ #include <deque>
+ #include <memory>
+ 
++#if ADB_LINUX_TCP_ONLY
++typedef struct rsa_st RSA;
++#else
+ #include <openssl/rsa.h>
+ #include <openssl/stack.h>
++#endif
+ 
+ /* AUTH packets first argument */
+ /* Request */
+@@ -66,9 +70,11 @@ void adbd_notify_framework_connected_key(atransport* t);
+ 
+ void send_auth_request(atransport *t);
+ 
++#if !ADB_LINUX_TCP_ONLY
+ void adbd_auth_tls_handshake(atransport* t);
+ int adbd_tls_verify_cert(X509_STORE_CTX* ctx, std::string* auth_key);
+ bssl::UniquePtr<STACK_OF(X509_NAME)> adbd_tls_client_ca_list();
++#endif
+ 
+ #endif // ADB_HOST
+ 
+diff --git a/daemon/main.cpp b/daemon/main.cpp
+index 3d3f302..ad4948d 100644
+--- a/daemon/main.cpp
++++ b/daemon/main.cpp
+@@ -283,6 +283,11 @@ int adbd_main() {
+         if (prop_port.empty() && getenv("ADBD_PORT")) {
+             prop_port = getenv("ADBD_PORT");
+         }
++        // Keep compatibility with the legacy Debian adbd launcher used by
++        // rktoolkit/usbdevice.service.
++        if (prop_port.empty() && getenv("ADB_TCP_PORT")) {
++            prop_port = getenv("ADB_TCP_PORT");
++        }
+ #endif
+ 
+         int port;
+diff --git a/daemon/shell_service.cpp b/daemon/shell_service.cpp
+index 0b71b03..4da282c 100644
+--- a/daemon/shell_service.cpp
++++ b/daemon/shell_service.cpp
+@@ -254,6 +254,12 @@ bool Subprocess::ForkAndExec(std::string* error) {
+ 
+     // Construct the environment for the child before we fork.
+     passwd* pw = getpwuid(getuid());
++    const char* configured_shell = getenv("ADBD_SHELL");
++    std::string shell_path = _PATH_BSHELL;
++    if (configured_shell != nullptr && configured_shell[0] != '\0') {
++        shell_path = configured_shell;
++    }
++    std::string login_shell = "-" + shell_path;
+     std::unordered_map<std::string, std::string> env;
+     if (environ) {
+         char** current = environ;
+@@ -273,7 +279,7 @@ bool Subprocess::ForkAndExec(std::string* error) {
+         env["HOME"] = pw->pw_dir;
+         env["HOSTNAME"] = GetHostName();
+         env["LOGNAME"] = pw->pw_name;
+-        env["SHELL"] = pw->pw_shell;
++        env["SHELL"] = shell_path;
+         env["TMPDIR"] = "/data/local/tmp";
+         env["USER"] = pw->pw_name;
+     }
+@@ -388,11 +394,13 @@ bool Subprocess::ForkAndExec(std::string* error) {
+ 
+         if (command_.empty()) {
+             // Spawn a login shell if we don't have a command.
+-            execle(_PATH_BSHELL, "-" _PATH_BSHELL, nullptr, cenv.data());
++            execle(shell_path.c_str(), login_shell.c_str(), nullptr, cenv.data());
+         } else {
+-            execle(_PATH_BSHELL, _PATH_BSHELL, "-c", command_.c_str(), nullptr, cenv.data());
++            execle(shell_path.c_str(), shell_path.c_str(), "-c", command_.c_str(), nullptr,
++                   cenv.data());
+         }
+-        WriteFdExactly(child_error_sfd, "exec '" _PATH_BSHELL "' failed: ");
++        WriteFdExactly(child_error_sfd,
++                       android::base::StringPrintf("exec '%s' failed: ", shell_path.c_str()));
+         WriteFdExactly(child_error_sfd, strerror(errno));
+         child_error_sfd.reset(-1);
+         _Exit(1);
+diff --git a/transport.cpp b/transport.cpp
+index cf8561f..f0e0f1a 100644
+--- a/transport.cpp
++++ b/transport.cpp
+@@ -36,9 +36,11 @@
+ #include <string>
+ #include <thread>
+ 
++#if !ADB_LINUX_TCP_ONLY
+ #include <adb/crypto/rsa_2048_key.h>
+ #include <adb/crypto/x509_generator.h>
+ #include <adb/tls/tls_connection.h>
++#endif
+ #include <android-base/logging.h>
+ #include <android-base/no_destructor.h>
+ #include <android-base/parsenetaddress.h>
+@@ -63,11 +65,13 @@
+ #include "client/usb.h"
+ #endif
+ 
++#if !ADB_LINUX_TCP_ONLY
+ using namespace adb::crypto;
+ using namespace adb::tls;
++using TlsError = TlsConnection::TlsError;
++#endif
+ using namespace std::string_literals;
+ using android::base::ScopedLockAssertion;
+-using TlsError = TlsConnection::TlsError;
+ 
+ static void remove_transport(atransport* transport);
+ static void transport_destroy(atransport* transport);
+@@ -452,6 +456,7 @@ FdConnection::FdConnection(unique_fd fd) : fd_(std::move(fd)) {}
+ FdConnection::~FdConnection() {}
+ 
+ bool FdConnection::DispatchRead(void* buf, size_t len) {
++#if !ADB_LINUX_TCP_ONLY
+     if (tls_ != nullptr) {
+         // The TlsConnection doesn't allow 0 byte reads
+         if (len == 0) {
+@@ -459,11 +464,13 @@ bool FdConnection::DispatchRead(void* buf, size_t len) {
+         }
+         return tls_->ReadFully(buf, len);
+     }
++#endif
+ 
+     return ReadFdExactly(fd_.get(), buf, len);
+ }
+ 
+ bool FdConnection::DispatchWrite(void* buf, size_t len) {
++#if !ADB_LINUX_TCP_ONLY
+     if (tls_ != nullptr) {
+         // The TlsConnection doesn't allow 0 byte writes
+         if (len == 0) {
+@@ -471,6 +478,7 @@ bool FdConnection::DispatchWrite(void* buf, size_t len) {
+         }
+         return tls_->WriteFully(std::string_view(reinterpret_cast<const char*>(buf), len));
+     }
++#endif
+ 
+     return WriteFdExactly(fd_.get(), buf, len);
+ }
+@@ -513,6 +521,11 @@ bool FdConnection::Write(apacket* packet) {
+ }
+ 
+ bool FdConnection::DoTlsHandshake(RSA* key, std::string* auth_key) {
++#if ADB_LINUX_TCP_ONLY
++    (void)key;
++    (void)auth_key;
++    return false;
++#else
+     bssl::UniquePtr<EVP_PKEY> evp_pkey(EVP_PKEY_new());
+     if (!EVP_PKEY_set1_RSA(evp_pkey.get(), key)) {
+         LOG(ERROR) << "EVP_PKEY_set1_RSA failed";
+@@ -556,6 +569,7 @@ bool FdConnection::DoTlsHandshake(RSA* key, std::string* auth_key) {
+ 
+     tls_.reset();
+     return false;
++#endif
+ }
+ 
+ void FdConnection::Close() {
+@@ -1211,27 +1225,29 @@ const FeatureSet& supported_features() {
+         // clang-format off
+         FeatureSet result {
+             kFeatureShell2,
+-            kFeatureCmd,
+             kFeatureStat2,
+             kFeatureLs2,
+             kFeatureFixedPushMkdir,
+-            kFeatureApex,
+-            kFeatureAbb,
+             kFeatureFixedPushSymlinkTimestamp,
+-            kFeatureAbbExec,
+-            kFeatureRemountShell,
+-            kFeatureTrackApp,
+             kFeatureSendRecv2,
+             kFeatureSendRecv2Brotli,
+             kFeatureSendRecv2LZ4,
+             kFeatureSendRecv2Zstd,
+             kFeatureSendRecv2DryRunSend,
++            kFeatureDevRaw,
++#if !ADB_LINUX_TCP_ONLY
++            kFeatureCmd,
++            kFeatureApex,
++            kFeatureAbb,
++            kFeatureAbbExec,
++            kFeatureRemountShell,
++            kFeatureTrackApp,
+             kFeatureOpenscreenMdns,
+             kFeatureDeviceTrackerProtoFormat,
+-            kFeatureDevRaw,
+             kFeatureAppInfo,
+             kFeatureServerStatus,
+             kFeatureTrackMdns,
++#endif
+         };
+         // clang-format on
+ 
+diff --git a/transport.h b/transport.h
+index ed130af..1099517 100644
+--- a/transport.h
++++ b/transport.h
+@@ -36,7 +36,11 @@
+ 
+ #include <android-base/macros.h>
+ #include <android-base/thread_annotations.h>
++#if ADB_LINUX_TCP_ONLY
++typedef struct rsa_st RSA;
++#else
+ #include <openssl/rsa.h>
++#endif
+ 
+ #include "adb.h"
+ #include "adb_unique_fd.h"
+@@ -216,7 +220,9 @@ struct FdConnection : public BlockingConnection {
+     bool DispatchWrite(void* buf, size_t len);
+ 
+     unique_fd fd_;
++#if !ADB_LINUX_TCP_ONLY
+     std::unique_ptr<adb::tls::TlsConnection> tls_;
++#endif
+ };
+ 
+ // Waits for a transport's connection to be not pending. This is a separate
+-- 
+2.54.0
+

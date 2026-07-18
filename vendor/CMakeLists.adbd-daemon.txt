@@ -1,0 +1,136 @@
+# Linux/glibc, TCP-only adbd build. This intentionally omits Android-only
+# framework authentication, USB FunctionFS, JDWP, and mDNS integration.
+
+add_library(liblog STATIC
+	logging/liblog/log_event_list.cpp
+	logging/liblog/log_event_write.cpp
+	logging/liblog/logger_name.cpp
+	logging/liblog/logger_read.cpp
+	logging/liblog/logger_write.cpp
+	logging/liblog/properties.cpp
+	logging/liblog/logprint.cpp)
+target_compile_definitions(liblog PRIVATE
+	LIBLOG_LOG_TAG=1006 _XOPEN_SOURCE=700 FAKE_LOG_DEVICE=1)
+target_include_directories(liblog PUBLIC
+	core/include
+	logging/liblog/include
+	core/libcutils/include
+	libbase/include)
+
+include(CMakeLists.libbase.txt)
+
+set(libcutils_SOURCES
+	core/libcutils/android_get_control_file.cpp
+	core/libcutils/ashmem-host.cpp
+	core/libcutils/config_utils.cpp
+	core/libcutils/fs.cpp
+	core/libcutils/hashmap.cpp
+	core/libcutils/iosched_policy.cpp
+	core/libcutils/load_file.cpp
+	core/libcutils/multiuser.cpp
+	core/libcutils/native_handle.cpp
+	core/libcutils/properties.cpp
+	core/libcutils/record_stream.cpp
+	core/libcutils/socket_inaddr_any_server_unix.cpp
+	core/libcutils/socket_local_client_unix.cpp
+	core/libcutils/socket_local_server_unix.cpp
+	core/libcutils/socket_network_client_unix.cpp
+	core/libcutils/sockets_unix.cpp
+	core/libcutils/sockets.cpp
+	core/libcutils/str_parms.cpp
+	core/libcutils/strlcpy.c
+	core/libcutils/trace-host.cpp)
+add_library(libcutils STATIC ${libcutils_SOURCES})
+target_compile_definitions(libcutils PRIVATE _GNU_SOURCE)
+target_include_directories(libcutils PRIVATE
+	logging/liblog/include
+	core/libutils/include)
+target_include_directories(libcutils PUBLIC
+	core/include
+	core/libcutils/include
+	libbase/include)
+target_link_libraries(libcutils PUBLIC libbase liblog)
+
+set(adbd_SOURCES
+	adb/adb.cpp
+	adb/adb_io.cpp
+	adb/adb_listeners.cpp
+	adb/adb_mdns.cpp
+	adb/adb_trace.cpp
+	adb/adb_unique_fd.cpp
+	adb/adb_utils.cpp
+	adb/apacket_reader.cpp
+	adb/fdevent/fdevent.cpp
+	adb/fdevent/fdevent_epoll.cpp
+	adb/services.cpp
+	adb/shell_service_protocol.cpp
+	adb/sockets.cpp
+	adb/socket_spec.cpp
+	adb/sysdeps/env.cpp
+	adb/sysdeps/errno.cpp
+	adb/sysdeps/posix/network.cpp
+	adb/sysdeps_unix.cpp
+	adb/transport.cpp
+	adb/transport_fd.cpp
+	adb/types.cpp
+	adb/daemon/file_sync_service.cpp
+	adb/daemon/logging.cpp
+	adb/daemon/main.cpp
+	adb/daemon/services.cpp
+	adb/daemon/shell_service.cpp
+	adb/daemon/transport_socket_server.cpp
+	linux-adbd/stubs.cpp)
+
+add_executable(adbd ${adbd_SOURCES})
+target_compile_definitions(adbd PRIVATE
+	ADB_HOST=0
+	ADB_LINUX_TCP_ONLY=1
+	_GNU_SOURCE
+	ANDROID_BASE_UNIQUE_FD_DISABLE_IMPLICIT_CONVERSION=1)
+target_compile_options(adbd PRIVATE
+	-pthread
+	-include fmt/format.h
+	-Wno-deprecated-declarations
+	-Wno-unused-parameter
+	-Wno-missing-field-initializers)
+if(ANDROID_TOOLS_ADBD_FULLY_STATIC)
+	target_link_options(adbd PRIVATE -static)
+else()
+	target_link_options(adbd PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
+# glibc before 2.34 keeps pthread in a separate static archive.  libstdc++
+# references pthread_detach/pthread_join weakly, so a normal trailing
+# `-pthread` does not extract those members and std::thread::detach() becomes
+# a no-op call that reports the pthread_t value as an error on AArch64.
+if(ANDROID_TOOLS_ADBD_FULLY_STATIC)
+	set(adbd_thread_libraries
+		-Wl,--whole-archive
+		pthread
+		-Wl,--no-whole-archive)
+else()
+	set(adbd_thread_libraries Threads::Threads)
+endif()
+target_include_directories(adbd PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}
+	adb
+	adb/libs/libadbd_fs/include
+	core/include
+	core/libcutils/include
+	core/diagnose_usb/include
+	libbase/include
+	linux-adbd/include
+	logging/liblog/include)
+target_link_libraries(adbd PRIVATE
+	libcutils
+	libbase
+	liblog
+	brotlicommon
+	brotlidec
+	brotlienc
+	lz4_static
+	libzstd_static
+	${adbd_thread_libraries}
+	resolv
+	util)

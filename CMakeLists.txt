@@ -12,6 +12,8 @@ option(ANDROID_TOOLS_PATCH_VENDOR "Patch vendor projects using patches directory
 option(ANDROID_TOOLS_USE_BUNDLED_FMT "Use bundled fmt library instead of system provided one" OFF)
 option(ANDROID_TOOLS_USE_BUNDLED_LIBUSB "Use bundled libusb library instead of system provided one" OFF)
 option(ANDROID_TOOLS_LIBUSB_ENABLE_UDEV "Enable udev for device enumeration and hotplug support" OFF)
+option(ANDROID_TOOLS_BUILD_ADBD_ONLY "Build only the Linux TCP adbd daemon" OFF)
+option(ANDROID_TOOLS_ADBD_FULLY_STATIC "Fully static-link the Linux TCP adbd daemon" ON)
 
 # Install bash/zsh completion files.
 set(COMPLETION_COMMON_DIR "${CMAKE_INSTALL_FULL_DATADIR}/android-tools/completions")
@@ -33,8 +35,10 @@ set(BORINGSSL_VERSION 40e035a9e5d721b3b7c15c46259d782ffe7d9e96)
 # Vendor string used in version outputs.
 set(ANDROID_VENDOR android-tools)
 
-configure_file(version.h.in vendor/build/version.h @ONLY)
-configure_file(platform_tools_version.h.in vendor/platform_tools_version.h @ONLY)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/vendor/build")
+configure_file(version.h.in "${CMAKE_CURRENT_BINARY_DIR}/vendor/build/version.h" @ONLY)
+configure_file(platform_tools_version.h.in
+    "${CMAKE_CURRENT_BINARY_DIR}/vendor/platform_tools_version.h" @ONLY)
 
 # The CMakeLists.txt in the vendor subdirectory is responsible for
 # patching, building and installing the software.

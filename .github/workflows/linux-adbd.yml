@@ -1,0 +1,75 @@
+name: Linux adbd
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aarch64-static:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            binutils-aarch64-linux-gnu \
+            cmake \
+            file \
+            g++-aarch64-linux-gnu \
+            ninja-build \
+            qemu-user
+
+      - name: Build static AArch64 daemon
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/cmake/toolchains/aarch64-linux-gnu.cmake
+        run: scripts/build-linux-adbd.sh build/linux-adbd-aarch64
+
+      - name: Verify and package
+        run: |
+          mkdir -p dist
+          aarch64-linux-gnu-strip --strip-unneeded \
+            -o dist/adbd-36.0.1-linux-aarch64-static \
+            build/linux-adbd-aarch64/vendor/adbd
+          file dist/adbd-36.0.1-linux-aarch64-static
+          if readelf -d dist/adbd-36.0.1-linux-aarch64-static 2>&1 | grep -q NEEDED; then
+            echo "unexpected dynamic dependency"
+            exit 1
+          fi
+          qemu-aarch64 dist/adbd-36.0.1-linux-aarch64-static --version
+          ADBD_PORT=5038 qemu-aarch64 \
+            dist/adbd-36.0.1-linux-aarch64-static --device_banner=device \
+            > dist/qemu-smoke.log 2>&1 &
+          daemon_pid=$!
+          started=0
+          for _ in $(seq 40); do
+            if grep -q "adbd started" dist/qemu-smoke.log; then
+              started=1
+              break
+            fi
+            if ! kill -0 "${daemon_pid}" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          kill "${daemon_pid}" 2>/dev/null || true
+          wait "${daemon_pid}" 2>/dev/null || true
+          cat dist/qemu-smoke.log
+          test "${started}" -eq 1
+          sha256sum dist/adbd-36.0.1-linux-aarch64-static \
+            > dist/adbd-36.0.1-linux-aarch64-static.sha256
+
+      - name: Upload daemon
+        uses: actions/upload-artifact@v4
+        with:
+          name: adbd-36.0.1-linux-aarch64-static
+          path: dist/
+          if-no-files-found: error

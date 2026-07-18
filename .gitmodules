@@ -58,3 +58,15 @@
 	shallow = true
 	path = vendor/libusb
 	url = https://android.googlesource.com/platform/external/libusb.git
+[submodule "vendor/third_party/brotli"]
+	shallow = true
+	path = vendor/third_party/brotli
+	url = https://github.com/google/brotli.git
+[submodule "vendor/third_party/lz4"]
+	shallow = true
+	path = vendor/third_party/lz4
+	url = https://github.com/lz4/lz4.git
+[submodule "vendor/third_party/zstd"]
+	shallow = true
+	path = vendor/third_party/zstd
+	url = https://github.com/facebook/zstd.git

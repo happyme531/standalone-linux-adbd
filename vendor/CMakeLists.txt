@@ -41,21 +41,27 @@ add_compile_options(-Wno-attributes)
 # 32-bit glibc platforms this is not the case by default.
 add_compile_definitions(_FILE_OFFSET_BITS=64 _LARGEFILE64_SOURCE)
 
-set(android-vendored
-	avb
-	adb
-	core
-	extras
-	libbase
-	libufdt
-	libziparchive
-	logging
-	mkbootimg
-	selinux
-	f2fs-tools
-	e2fsprogs
-	fmtlib
-	boringssl)
+if(ANDROID_TOOLS_BUILD_ADBD_ONLY)
+	# Keep CI and local source preparation small: the daemon-only target uses
+	# just these patched AOSP projects.
+	set(android-vendored adb core libbase logging)
+else()
+	set(android-vendored
+		avb
+		adb
+		core
+		extras
+		libbase
+		libufdt
+		libziparchive
+		logging
+		mkbootimg
+		selinux
+		f2fs-tools
+		e2fsprogs
+		fmtlib
+		boringssl)
+endif()
 
 # XXX: Consider using https://cmake.org/cmake/help/v3.0/module/ExternalProject.html
 if(ANDROID_TOOLS_PATCH_VENDOR AND EXISTS "${ANDROID_PATCH_DIR}/")
@@ -64,8 +70,11 @@ if(ANDROID_TOOLS_PATCH_VENDOR AND EXISTS "${ANDROID_PATCH_DIR}/")
 		file(GLOB patches ${ANDROID_PATCH_DIR}/${v}/*.patch)
 		if(patches)
 			message(STATUS "Applying patches for: ${v}")
-			execute_process(COMMAND git -C
-				${CMAKE_CURRENT_SOURCE_DIR}/${v} am ${patches}
+			execute_process(COMMAND git
+				-c commit.gpgsign=false
+				-c user.name=android-tools-builder
+				-c user.email=builder@localhost
+				-C ${CMAKE_CURRENT_SOURCE_DIR}/${v} am ${patches}
 				RESULT_VARIABLE ret)
 			if(NOT "${ret}" STREQUAL "0")
 				message(FATAL_ERROR "Couldn't apply patches for ${v}")
@@ -74,14 +83,36 @@ if(ANDROID_TOOLS_PATCH_VENDOR AND EXISTS "${ANDROID_PATCH_DIR}/")
 	endforeach(v)
 endif()
 
-add_subdirectory(boringssl EXCLUDE_FROM_ALL)
-
 if(ANDROID_TOOLS_USE_BUNDLED_FMT)
 	add_subdirectory(fmtlib EXCLUDE_FROM_ALL)
 else()
 	find_package(fmt CONFIG REQUIRED)
 	message(STATUS "Found fmt: ${fmt_DIR} (version ${fmt_VERSION})")
 endif()
+
+if(ANDROID_TOOLS_BUILD_ADBD_ONLY)
+	set(BROTLI_DISABLE_TESTS ON CACHE BOOL "" FORCE)
+	set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+	set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+	set(LZ4_BUILD_CLI OFF CACHE BOOL "" FORCE)
+	set(LZ4_BUILD_LEGACY_LZ4C OFF CACHE BOOL "" FORCE)
+	set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+	set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+	set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+	set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+	set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+	set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
+	add_subdirectory(third_party/brotli EXCLUDE_FROM_ALL)
+	add_subdirectory(third_party/lz4/build/cmake third_party/lz4-build EXCLUDE_FROM_ALL)
+	add_subdirectory(third_party/zstd/build/cmake third_party/zstd-build EXCLUDE_FROM_ALL)
+	set(THREADS_PREFER_PTHREAD_FLAG ON)
+	find_package(Threads REQUIRED)
+	include(CMakeLists.adbd-daemon.txt)
+	install(TARGETS adbd DESTINATION bin)
+	return()
+endif()
+
+add_subdirectory(boringssl EXCLUDE_FROM_ALL)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(libbrotlicommon REQUIRED IMPORTED_TARGET libbrotlicommon)
