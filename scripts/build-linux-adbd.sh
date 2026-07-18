@@ -31,7 +31,7 @@ done
 
 missing_submodules=()
 for path in "${required_submodules[@]}"; do
-    if ! git -C "${repo_dir}/${path}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ ! -e "${repo_dir}/${path}/.git" ]]; then
         missing_submodules+=("${path}")
     fi
 done
