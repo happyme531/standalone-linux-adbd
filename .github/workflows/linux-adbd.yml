@@ -69,8 +69,11 @@ jobs:
           wait "${daemon_pid}" 2>/dev/null || true
           cat dist/qemu-smoke.log
           test "${started}" -eq 1
-          sha256sum dist/adbd-36.0.1-linux-aarch64-static \
-            > dist/adbd-36.0.1-linux-aarch64-static.sha256
+          (
+            cd dist
+            sha256sum adbd-36.0.1-linux-aarch64-static \
+              > adbd-36.0.1-linux-aarch64-static.sha256
+          )
           install -m 0755 contrib/rockchip-usbdevice/adbd-ms-os-desc.sh \
             dist/rockchip-adbd-ms-os-desc.sh
           tar -cJf adbd-36.0.1-linux-aarch64-static.tar.xz -C dist \
@@ -78,8 +81,11 @@ jobs:
             adbd-36.0.1-linux-aarch64-static.sha256 \
             rockchip-adbd-ms-os-desc.sh
           mv adbd-36.0.1-linux-aarch64-static.tar.xz dist/
-          sha256sum dist/adbd-36.0.1-linux-aarch64-static.tar.xz \
-            > dist/adbd-36.0.1-linux-aarch64-static.tar.xz.sha256
+          (
+            cd dist
+            sha256sum adbd-36.0.1-linux-aarch64-static.tar.xz \
+              > adbd-36.0.1-linux-aarch64-static.tar.xz.sha256
+          )
 
       - name: Upload daemon
         uses: actions/upload-artifact@v7
