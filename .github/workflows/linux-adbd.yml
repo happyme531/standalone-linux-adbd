@@ -73,6 +73,13 @@ jobs:
             > dist/adbd-36.0.1-linux-aarch64-static.sha256
           install -m 0755 contrib/rockchip-usbdevice/adbd-ms-os-desc.sh \
             dist/rockchip-adbd-ms-os-desc.sh
+          tar -cJf adbd-36.0.1-linux-aarch64-static.tar.xz -C dist \
+            adbd-36.0.1-linux-aarch64-static \
+            adbd-36.0.1-linux-aarch64-static.sha256 \
+            rockchip-adbd-ms-os-desc.sh
+          mv adbd-36.0.1-linux-aarch64-static.tar.xz dist/
+          sha256sum dist/adbd-36.0.1-linux-aarch64-static.tar.xz \
+            > dist/adbd-36.0.1-linux-aarch64-static.tar.xz.sha256
 
       - name: Upload daemon
         uses: actions/upload-artifact@v4
@@ -80,3 +87,28 @@ jobs:
           name: adbd-36.0.1-linux-aarch64-static
           path: dist/
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: aarch64-static
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download daemon artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: adbd-36.0.1-linux-aarch64-static
+          path: dist
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" || \
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "Standalone Linux adbd ${GITHUB_REF_NAME}" \
+              --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" --clobber
