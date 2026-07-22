@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: android-tools-builder <builder@localhost>
+Date: Thu, 23 Jul 2026 01:00:00 +0800
+Subject: [PATCH] adb: map local sockets to Linux abstract namespace
+
+Rockchip's closed NPU transfer client forwards local:transfer_proxy while
+rknn_server listens on the Linux abstract socket @transfer_proxy. Android
+adbd maps local: to the reserved /dev/socket namespace, but that convention
+does not describe standalone Linux services.
+
+Keep Android and host adb behavior unchanged. Only the standalone Linux adbd
+target maps the legacy local: alias to the abstract namespace.
+---
+ socket_spec.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/socket_spec.cpp b/socket_spec.cpp
+index 2f03552..ff93db5 100644
+--- a/socket_spec.cpp
++++ b/socket_spec.cpp
+@@ -69,5 +69,7 @@ static auto& kLocalSocketTypes = *new std::unordered_map<std::string, LocalSocket
+ #if ADB_HOST
+     { "local", { ANDROID_SOCKET_NAMESPACE_FILESYSTEM, !ADB_WINDOWS } },
++#elif defined(ADB_STANDALONE_LINUX)
++    { "local", { ANDROID_SOCKET_NAMESPACE_ABSTRACT, ADB_LINUX } },
+ #else
+     { "local", { ANDROID_SOCKET_NAMESPACE_RESERVED, !ADB_WINDOWS } },
+ #endif

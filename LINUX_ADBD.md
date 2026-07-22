@@ -20,6 +20,12 @@ The compatibility layer accepts the legacy `ADB_TCP_PORT` and `ADBD_SHELL`
 environment variables used by Rockchip's `usbdevice.service`. `ADBD_PORT`
 remains the preferred generic port variable.
 
+Rockchip RKNN Toolkit2 forwards its board-side transfer socket as
+`local:transfer_proxy`, while `rknn_server` listens on the Linux abstract
+socket `@transfer_proxy`. For the standalone Linux target only, `local:` maps
+to the abstract namespace so this closed RPC client remains compatible. Host
+ADB and Android daemon builds keep their upstream namespace behavior.
+
 USB mode expects the platform's gadget manager to create and mount an `adb`
 FunctionFS instance at `/dev/usb-ffs/adb`. The daemon writes full-speed,
 high-speed, SuperSpeed, and Microsoft OS descriptors, then opens the bulk
@@ -112,6 +118,13 @@ here. Every source, board, and round-trip SHA-256 matched.
 The USB descriptor probe retrieved the 18-byte `MSFT100` string, the 40-byte
 Extended Compat ID containing `WINUSB`, and the 142-byte Extended Properties
 descriptor containing `{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}`.
+
+RKNN Toolkit2's unchanged client also completed an operator performance run
+over USB through a running `rknn_server`:
+
+```sh
+rknnperf.py model.rknn
+```
 
 ## Board deployment and rollback
 

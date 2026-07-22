@@ -42,7 +42,7 @@ fi
 # CMake applies each patch series with git-am. Detect a prepared checkout from
 # the resulting source content, not from commit subjects or generated hashes.
 patch_state_specs=(
-    "vendor/adb:patches/adb/0030-adb-enable-FunctionFS-USB-on-standalone-Linux.patch"
+    "vendor/adb:patches/adb/0031-adb-map-local-sockets-to-Linux-abstract-namespace.patch"
     "vendor/core:patches/core/0012-Add-explicit-import-for-algorithm.patch"
     "vendor/libbase:patches/libbase/0007-Include-missing-cstdint-header.patch"
     "vendor/logging:patches/logging/0001-Don-t-use-the-internal-glibc-header-sys-cdefs.h.patch"
